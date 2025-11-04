@@ -4,6 +4,7 @@ from pathlib import Path
 import rasterio
 from rasterio import plot
 from rasterio.merge import merge
+from rasterio.transform import array_bounds
 import matplotlib.pyplot as plt
 from dem_stitcher.stitcher import stitch_dem
 import requests
@@ -12,8 +13,10 @@ import geopandas as gpd
 from shapely.geometry import Polygon
 import windkit as wk
 import numpy as np
+from pyproj import Transformer
+from rasterio.crs import CRS
 
-from .csv_utils import load_coordinates_from_csv, get_coordinate_by_index
+from .reproject_raster import save_metadata_json, reproject_raster_to_utm, get_utm_crs
 
 R = 6_371_000.0  # Earth's mean radius in meters
 
@@ -33,17 +36,18 @@ class DEMDownloader:
         self.log(f"Downloading DEM for lat={lat}, lon={lon}")
         
         return download_square_data(
-            index = index,
+            index=index,
             center_lon=lon,
             center_lat=lat,
             side_km=self.config.side_length_km,
-            include_roughness_map =self.config.include_roughness_map,
+            include_roughness_map=self.config.include_roughness_map,
             dem_name=self.config.dem_name,
             dst_ellipsoidal_height=self.config.dst_ellipsoidal_height,
             dst_area_or_point=self.config.dst_area_or_point,
             out_dir=self.config.out_dir,
             verbose=self.config.verbose,
-            show_plot=self.config.show_plots
+            show_plot=self.config.show_plots,
+            save_raw=self.config.save_raw_files
         )
 
 # Utility functions
@@ -164,13 +168,25 @@ def download_square_data(
         out_dir: str = "out",
         verbose: bool = False,
         show_plot: bool = False,
+        save_raw: bool = False,
     ) -> tuple[str, str | None]:
 
-    bounds,corners = _calculate_bounds(side_km, center_lat, center_lon)
+    bounds, corners = _calculate_bounds(side_km, center_lat, center_lon)
     
-    if verbose: print(f"Bounds: {bounds}")
-        
-    dem_out_file = _generate_filename(index,center_lat, center_lon,out_dir,side_km, dem_name, "terrain")
+    if verbose: 
+        print(f"Bounds (lat/lon): {bounds}")
+    
+    # Determine UTM CRS once for both DEM and roughness
+    utm_crs = get_utm_crs(center_lon, center_lat)
+    
+    if verbose:
+        print(f"Target UTM CRS: {utm_crs}")
+    
+    dem_out_file = _generate_filename(index, center_lat, center_lon, out_dir, side_km, dem_name, "terrain")
+    
+    # ===== DEM PROCESSING =====
+    if verbose:
+        print("Downloading DEM data...")
     
     data, profile = stitch_dem(
         bounds,
@@ -179,16 +195,54 @@ def download_square_data(
         dst_area_or_point=dst_area_or_point
     )
     
-    with rasterio.open(dem_out_file, "w", **profile) as dst:
-        dst.write(data, 1)
+    if verbose:
+        print(f"Original DEM CRS: {profile['crs']}")
+    
+    # NEW: Save raw file if requested
+    if save_raw:
+        raw_dem_file = dem_out_file.parent / f"{dem_out_file.stem}_raw.tif"
+        with rasterio.open(raw_dem_file, "w", **profile) as dst:
+            dst.write(data, 1)
+            dst.update_tags(AREA_OR_POINT=dst_area_or_point)
+        print(f"Saved raw DEM (EPSG:4326) to: {raw_dem_file.resolve()}")
+    
+    # Reproject to UTM
+    data_utm, profile_utm = reproject_raster_to_utm(data, profile, utm_crs, verbose)
+    
+    # Save UTM version
+    with rasterio.open(dem_out_file, "w", **profile_utm) as dst:
+        dst.write(data_utm, 1)
         dst.update_tags(AREA_OR_POINT=dst_area_or_point)
-    print(f"Saved terrain elevation map to: {dem_out_file.resolve()}")
+    
+    print(f"Saved terrain elevation map (UTM) to: {dem_out_file.resolve()}")
+    
+    # Calculate UTM center and bounds for metadata
+    transformer = Transformer.from_crs(CRS.from_epsg(4326), utm_crs, always_xy=True)
+    center_utm_x, center_utm_y = transformer.transform(center_lon, center_lat)
+    
+    bounds_utm = array_bounds(profile_utm['height'], profile_utm['width'], profile_utm['transform'])
+    resolution_m = profile_utm['transform'].a
+    
+    # Save metadata
+    save_metadata_json(
+        dem_out_file,
+        center_lat,
+        center_lon,
+        utm_crs,
+        (center_utm_x, center_utm_y),
+        bounds_utm,
+        resolution_m
+    )
     
     if show_plot:
-        _plot_map(data, profile, side_km, "Terrain")
-        
+        _plot_map(data_utm, profile_utm, side_km, "Terrain")
+    
+    # ===== ROUGHNESS MAP PROCESSING =====
     if include_roughness_map:
-        rmap_out_file = _generate_filename(index,center_lat, center_lon,out_dir,side_km, "worldcover", "roughness")
+        rmap_out_file = _generate_filename(index, center_lat, center_lon, out_dir, side_km, "worldcover", "roughness")
+        
+        if verbose:
+            print("Downloading roughness map data...")
         
         # Load grid and select tiles
         grid_url = (
@@ -199,32 +253,64 @@ def download_square_data(
         aoi = Polygon([(lon, lat) for lat, lon in corners])
         tiles = grid[grid.intersects(aoi)].ll_tile.tolist()
         
-        if verbose: print(f"Tiles to download: {tiles}")
+        if verbose: 
+            print(f"Tiles to download: {tiles}")
         
         version = "v100"
         year = 2020
         
         # Download & stitch
-        data_lc, profile = stitch_tiles(tiles, version, year, bounds)
+        data_lc, profile_lc = stitch_tiles(tiles, version, year, bounds)
         
         lct = wk.get_landcover_table("GWA4")
         
-        if verbose: print("Converting WorldCover classes to aerodynamic roughness length (z0)...")
+        if verbose: 
+            print("Converting WorldCover classes to aerodynamic roughness length (z0)...")
         
         lc_code_to_z0 = {
-                            lc_id: params.get('z0') 
-                            for lc_id, params in lct.items() 
-                            if params is not None and 'z0' in params
-                        }
+            lc_id: params.get('z0') 
+            for lc_id, params in lct.items() 
+            if params is not None and 'z0' in params
+        }
         z0_data = np.vectorize(lc_code_to_z0.get)(data_lc)
-        profile.update(dtype=rasterio.float32, count=1)
         
-        with rasterio.open(rmap_out_file, "w", **profile) as dst:
-            dst.write(z0_data, 1)
-        print(f"Saved roughness map to: {rmap_out_file.resolve()}")
-            
+        # Update profile for float data
+        profile_lc.update(dtype=rasterio.float32, count=1)
+        
+        # NEW: Save raw roughness file if requested
+        if save_raw:
+            raw_rmap_file = rmap_out_file.parent / f"{rmap_out_file.stem}_raw.tif"
+            with rasterio.open(raw_rmap_file, "w", **profile_lc) as dst:
+                dst.write(z0_data.astype(np.float32), 1)
+            print(f"Saved raw roughness map (EPSG:4326) to: {raw_rmap_file.resolve()}")
+        
+        # Reproject roughness map to UTM (same CRS as DEM)
+        z0_data_utm, profile_z0_utm = reproject_raster_to_utm(
+            z0_data.astype(np.float32), 
+            profile_lc, 
+            utm_crs, 
+            verbose
+        )
+        
+        # Save UTM version
+        with rasterio.open(rmap_out_file, "w", **profile_z0_utm) as dst:
+            dst.write(z0_data_utm, 1)
+        
+        print(f"Saved roughness map (UTM) to: {rmap_out_file.resolve()}")
+        
+        # Save metadata for roughness map
+        save_metadata_json(
+            rmap_out_file,
+            center_lat,
+            center_lon,
+            utm_crs,
+            (center_utm_x, center_utm_y),
+            bounds_utm,
+            profile_z0_utm['transform'].a
+        )
+        
         if show_plot:
-            _plot_map(z0_data, profile, side_km, "Roughness")
+            _plot_map(z0_data_utm, profile_z0_utm, side_km, "Roughness")
     
     return str(dem_out_file.resolve()), str(rmap_out_file.resolve()) if include_roughness_map else None
     

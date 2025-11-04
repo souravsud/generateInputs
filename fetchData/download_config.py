@@ -9,14 +9,15 @@ class DownloadConfig:
     dst_ellipsoidal_height: bool = False
     dst_area_or_point: str = "Point"
     side_length_km: float = 50.0
-    include_roughness_map: bool = False  # Changed to False by default for backward compatibility
+    include_roughness_map: bool = False
     
     # Paths
     out_dir: str = "Data/downloads"
     
     # Debug options
     verbose: bool = True
-    show_plots: bool = False  # Changed to False by default
+    show_plots: bool = False
+    save_raw_files: bool = True
     
     def __post_init__(self):
         """Create output directory"""
