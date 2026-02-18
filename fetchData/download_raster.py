@@ -69,6 +69,18 @@ def format_coord(value: float, is_lat: bool, precision: int = 5) -> str:
     return f"{hemi}{deg_str}_{frac_str}"
 
 def create_output_dir(lat: float, lon: float, index: int, root_folder: str) -> str:
+    """
+    Create a uniquely named output directory for a location.
+    
+    Args:
+        lat: Latitude of the location
+        lon: Longitude of the location
+        index: Index number for the location
+        root_folder: Base directory for output
+        
+    Returns:
+        str: Path to created directory, or None if directory already exists
+    """
     #Save folder for each location
     lat_str = format_coord(lat, is_lat=True, precision=3)
     lon_str = format_coord(lon, is_lat=False, precision=3)
