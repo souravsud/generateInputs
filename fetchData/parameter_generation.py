@@ -1,33 +1,28 @@
-import random
-
-def generate_directions(sectors, absolute_random=False):
+def generate_directions(sectors):
     """
-    Generates four random directions.
+    Generates evenly-spaced directions around 360 degrees.
+    
+    For CFD simulations, evenly distributed directions provide better coverage
+    and reproducible results compared to random directions.
     
     Args:
-        absolute_random (bool): If True, generates four completely random
-                                directions between 0 and 360.
-                                If False, generates one random direction from
-                                each of the four 90-degree sectors.
-                                
+        sectors (int): Number of direction sectors to generate.
+                      For example, 16 sectors gives directions every 22.5°.
+                      
     Returns:
-        list: A list of four random direction angles in degrees.
+        list: A list of evenly-spaced direction angles in degrees,
+              starting from 0° (North) and going clockwise.
+              
+    Example:
+        >>> generate_directions(4)
+        [0, 90, 180, 270]
+        >>> generate_directions(8)
+        [0, 45, 90, 135, 180, 225, 270, 315]
     """
     sector_size = 360 // sectors
-    
-    if absolute_random:
-        # Generate four entirely random directions from 0 to 360
-        return [random.randint(0, 360) for _ in range(sectors)]
-    else:
-        # Generate one random direction per 90-degree sector
-        directions = []
-        for i in range(sectors):
-            lower_bound = i * sector_size
-            upper_bound = (i + 1) * sector_size
-            directions.append(random.randint(lower_bound, upper_bound))
-        return directions
+    return [i * sector_size for i in range(sectors)]
     
 if __name__ == "__main__":
     # Example usage
-    print("Random directions (sector-based):", generate_directions(4, absolute_random=False))
-    print("Random directions (absolute):", generate_directions(16, absolute_random=False))
+    print("Evenly-spaced directions (4 sectors):", generate_directions(4))
+    print("Evenly-spaced directions (16 sectors):", generate_directions(16))

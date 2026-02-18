@@ -6,6 +6,18 @@ from fetchData.parameter_generation import generate_directions
 from terrain_following_mesh_generator import terrain_mesh as tm
 
 def main():
+    """
+    Main pipeline for generating CFD terrain inputs.
+    
+    This function orchestrates the complete workflow:
+    1. Loads coordinates from CSV
+    2. Downloads DEM and roughness data for each location
+    3. Generates terrain-following meshes for multiple wind directions
+    4. Creates ABL inlet boundary conditions
+    
+    Returns:
+        list: Results for each location as tuples of (index, dem_file, roughness_file, terrain_iterations)
+    """
     SECTORS = 16
     
     root_folder = os.path.dirname(os.path.abspath(__file__))
@@ -37,7 +49,7 @@ def main():
             download_path = create_output_dir(lat, lon, i, download_folder)
             if download_path is None:
                 print(f"✓ Terrain already exists! Skipping index {(i+1):04d} ( Lat:{lat:.3f}, Lon:{lon:.3f})")
-                results.append((i, None, None))
+                results.append((i, None, None, None))
                 continue
 
             dem_file, roughness_file = download_raster_data(

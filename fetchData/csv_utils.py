@@ -51,12 +51,3 @@ def load_coordinates_from_csv(csv_path, verbose=False):
             continue
     
     return coordinates
-
-def get_coordinate_by_index(csv_path, index, verbose=False):
-    """Get a specific coordinate pair by index"""
-    coordinates = load_coordinates_from_csv(csv_path, verbose)
-    
-    if index >= len(coordinates):
-        raise ValueError(f"Index {index} is out of range. CSV has {len(coordinates)} valid coordinate pairs.")
-    
-    return coordinates[index]
