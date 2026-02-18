@@ -40,8 +40,8 @@ def generate_directions(sectors):
 - **More appropriate for CFD** - deterministic wind direction sampling
 
 **Example Output:**
-- 4 sectors: `[0, 90, 180, 270]`
-- 16 sectors: `[0, 22, 44, 66, 88, 110, 132, 154, 176, 198, 220, 242, 264, 286, 308, 330]`
+- 4 sectors: `[0.0, 90.0, 180.0, 270.0]`
+- 16 sectors: `[0.0, 22.5, 45.0, 67.5, 90.0, 112.5, 135.0, 157.5, 180.0, 202.5, 225.0, 247.5, 270.0, 292.5, 315.0, 337.5]`
 
 ---
 

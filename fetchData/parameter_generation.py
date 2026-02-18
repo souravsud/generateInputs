@@ -15,12 +15,11 @@ def generate_directions(sectors):
               
     Example:
         >>> generate_directions(4)
-        [0, 90, 180, 270]
+        [0.0, 90.0, 180.0, 270.0]
         >>> generate_directions(8)
-        [0, 45, 90, 135, 180, 225, 270, 315]
+        [0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0]
     """
-    sector_size = 360 // sectors
-    return [i * sector_size for i in range(sectors)]
+    return [i * 360.0 / sectors for i in range(sectors)]
     
 if __name__ == "__main__":
     # Example usage
